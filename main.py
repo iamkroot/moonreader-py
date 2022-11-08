@@ -6,7 +6,6 @@ from datetime import date, timedelta as td
 from fractions import Fraction
 from pathlib import Path, PosixPath, PurePosixPath
 from pprint import pprint
-from string import punctuation
 from itertools import combinations
 from typing import Literal
 
@@ -136,14 +135,16 @@ def get_book_info(db_con: sqlite3.Connection) -> BookMetadataDict:
     return metadata
 
 
-def unique_books(books: BookMetadataDict, progress: OverallProgressDict):
+def get_unique_books(
+    books: BookMetadataDict, progress: OverallProgressDict
+) -> BookMetadataDict:
     """There may be multiple files corresponding to a single book.
     Use similarity matching on title to group the books. Then use progress%
     to trim out the older/unread version.
     """
 
     matcher = difflib.SequenceMatcher()
-    CUTOFF = 0.6
+    CUTOFF = 0.8
 
     def normalize_title(title: str) -> list[str]:
         """Removes some common terms and splits by whitespace."""
@@ -206,7 +207,21 @@ def unique_books(books: BookMetadataDict, progress: OverallProgressDict):
         if not g1.isdisjoint(g2):
             raise Exception(f"Book(s) {g1 & g2} in both groups", g1, g2)
 
-    print("got", len(groups), "groups")
+    print("got", len(groups), "unique books from total", len(books), "books")
+
+    unique_books = {}
+    for group in groups:
+        if len(group) > 1:
+            max_progress = max(group, key=lambda file: progress.get(file, 0))
+            prog = round(float(progress[max_progress]), 2)
+            print(
+                f"picked {max_progress.name} at {prog} from",
+                {k.name: progress.get(k, 0) for k in group},
+            )
+        else:
+            max_progress = next(iter(group))
+        unique_books[max_progress] = books[max_progress]
+    return unique_books
 
 
 def main():
@@ -222,7 +237,8 @@ def main():
     progress = get_progress(PROG_FILE, book_info)
     # pprint(progress)
 
-    unique_books(book_info, progress)
+    unique_books = get_unique_books(book_info, progress)
+    pprint({f.name: i for f, i in unique_books.items()})
 
 
 if __name__ == "__main__":
