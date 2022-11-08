@@ -59,20 +59,26 @@ class BookReadStats:
 
 
 @dataclass(slots=True)
-class BookInfo:
+class BookMetadata:
     title: str
     author: str
 
 
 OverallProgressDict = dict[PurePosixPath, Fraction]
 BookStatsDict = dict[PurePosixPath, BookReadStats]
-BookInfoDict = dict[PurePosixPath, BookInfo]
+BookMetadataDict = dict[PurePosixPath, BookMetadata]
 
 
-def get_progress(progress_file: Path) -> OverallProgressDict:
+def get_progress(
+    progress_file: Path, book_info: BookMetadataDict
+) -> OverallProgressDict:
     """For each book, get reading progress as a percentage."""
     progress = {}
     no_match = []
+
+    # the progress_file stores the file paths in lowercased form.
+    # we want to use title case everywhere, so use this to map it back to book_info keys
+    names_lower = {str(file).lower(): file for file in book_info}
 
     progress_data = progress_file.read_bytes()
 
@@ -83,7 +89,11 @@ def get_progress(progress_file: Path) -> OverallProgressDict:
             continue
         if not entry.string:
             continue
-        file = PurePosixPath(entry.attrs['name'])
+        file = entry.attrs['name']
+        if file_titlecase := names_lower.get(file):
+            file = PurePosixPath(file_titlecase)
+        else:
+            file = PurePosixPath(file)
         if match := PROGRESS_RE.match(entry.string):
             val = Fraction(match['percentage'])
             if old := progress.get(file):
@@ -114,7 +124,7 @@ def get_daily_progress(
     return stats
 
 
-def get_book_info(db_con: sqlite3.Connection) -> BookInfoDict:
+def get_book_info(db_con: sqlite3.Connection) -> BookMetadataDict:
     cur = db_con.execute("SELECT * FROM 'tmpbooks'")
     metadata = {}
     for row in cur.fetchall():
@@ -122,23 +132,32 @@ def get_book_info(db_con: sqlite3.Connection) -> BookInfoDict:
         title = row['book']
         author = row['author']
 
-        metadata[file] = BookInfo(title, author)
+        metadata[file] = BookMetadata(title, author)
     return metadata
 
 
-def unique_books(books: BookInfoDict, progress: OverallProgressDict):
+def unique_books(books: BookMetadataDict, progress: OverallProgressDict):
     """There may be multiple files corresponding to a single book.
     Use similarity matching on title to group the books. Then use progress%
     to trim out the older/unread version.
     """
 
-    matcher = difflib.SequenceMatcher(lambda x: x in punctuation)
+    matcher = difflib.SequenceMatcher()
     CUTOFF = 0.6
 
+    def normalize_title(title: str) -> list[str]:
+        """Removes some common terms and splits by whitespace."""
+        if idx := title.find(' by ') > 1:
+            title = title[:idx]
+        title = title.replace("z-lib.org", "")
+        title = title.replace(".epub", "")
+        # TODO: Remove punctuation?
+        return title.split()
+
     def get_similar(
-        other_books: BookInfoDict,
+        other_books: BookMetadataDict,
         file: PurePosixPath,
-        info: BookInfo,
+        info: BookMetadata,
         field_name: Literal['title'] | Literal['author'],
     ):
         matcher.set_seq1(getattr(info, field_name))
@@ -151,11 +170,16 @@ def unique_books(books: BookInfoDict, progress: OverallProgressDict):
                 similar.add(other_file)
         return similar
 
-    rem_books = books.copy()
+    # sort of abusing dataclasses here. storing list of strings in title
+    # difflib can accept list of strings
+    rem_books = {
+        file: BookMetadata(normalize_title(book.title), book.author)  # type: ignore
+        for file, book in books.items()
+    }
     groups: list[set[PosixPath]] = []
 
-    for file, info in books.items():
-        if file not in rem_books:
+    for file in books.keys():
+        if (info := rem_books.get(file)) is None:
             continue
         similar_titles = get_similar(rem_books, file, info, 'title')
         if info.author:
@@ -186,9 +210,6 @@ def unique_books(books: BookInfoDict, progress: OverallProgressDict):
 
 
 def main():
-    progress = get_progress(PROG_FILE)
-    # pprint(progress)
-
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
 
@@ -197,6 +218,9 @@ def main():
 
     book_info = get_book_info(con)
     # pprint(book_info)
+
+    progress = get_progress(PROG_FILE, book_info)
+    # pprint(progress)
 
     unique_books(book_info, progress)
 
