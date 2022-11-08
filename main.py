@@ -100,14 +100,36 @@ def get_daily_progress(
     return stats
 
 
+@dataclass(slots=True)
+class BookInfo:
+    title: str
+    author: str
+
+
+def get_book_info(db_con: sqlite3.Connection) -> dict[PurePosixPath, BookInfo]:
+    cur = db_con.execute("SELECT * FROM 'tmpbooks'")
+    metadata = {}
+    for row in cur.fetchall():
+        file = PurePosixPath(row['filename'])
+        title = row['book']
+        author = row['author']
+
+        metadata[file] = BookInfo(title, author)
+    return metadata
+
+
 def main():
     progress = get_progress(PROG_FILE)
     pprint(progress)
 
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
+
     daily_progress = get_daily_progress(con)
     pprint(daily_progress)
+
+    book_info = get_book_info(con)
+    pprint(book_info)
 
 
 if __name__ == "__main__":
