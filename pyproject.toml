@@ -13,3 +13,7 @@ beautifulsoup4 = "^4.11.1"
 [build-system]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+target-version = ['py311']
+skip-string-normalization = true
