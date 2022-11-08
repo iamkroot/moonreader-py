@@ -3,7 +3,7 @@ import sqlite3
 from dataclasses import dataclass
 from datetime import date, timedelta as td
 from fractions import Fraction
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from pprint import pprint
 
 import bs4
@@ -25,7 +25,7 @@ PROGRESS_RE = re.compile(
 )
 
 
-def get_progress(progress_file: Path) -> dict[str, Fraction]:
+def get_progress(progress_file: Path) -> dict[PurePosixPath, Fraction]:
     """For each book, get reading progress as a percentage."""
     progress = {}
     no_match = []
@@ -39,9 +39,9 @@ def get_progress(progress_file: Path) -> dict[str, Fraction]:
             continue
         if not entry.string:
             continue
-        file = entry["name"]
+        file = PurePosixPath(entry.attrs['name'])
         if match := PROGRESS_RE.match(entry.string):
-            val = Fraction(match["percentage"])
+            val = Fraction(match['percentage'])
             if old := progress.get(file):
                 # just to be extra sure
                 print(f"duplicate! {file=}, {old=}, {val=}")
@@ -70,8 +70,8 @@ class DailyStats:
             raise ValueError(f"invalid daily stats string {val}")
         day = UNIX_EPOCH + td(days=int(match["day_delta"]))
         assert day <= TODAY, f"Got future day {day} in daily stats"
-        reading_time = td(milliseconds=int(match["time_ms"]))
-        words = int(match["words"])
+        reading_time = td(milliseconds=int(match['time_ms']))
+        words = int(match['words'])
         return DailyStats(day, reading_time, words)
 
 
@@ -82,11 +82,13 @@ class BookReadStats:
     daily_stats: list[DailyStats]
 
 
-def get_daily_progress(db_con: sqlite3.Connection):
+def get_daily_progress(
+    db_con: sqlite3.Connection,
+) -> dict[PurePosixPath, BookReadStats]:
     cur = db_con.execute("SELECT * FROM 'statistics'")
     stats = {}
     for row in cur.fetchall():
-        file = row['filename']
+        file = PurePosixPath(row['filename'])
         reading_time = td(milliseconds=row['usedTime'])
         all_stats = [DailyStats.from_str(line) for line in row['dates'].splitlines()]
         book_stats = BookReadStats(reading_time, row['readWords'], all_stats)
