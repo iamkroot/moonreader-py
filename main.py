@@ -1,12 +1,14 @@
+from collections import Counter, defaultdict
 import difflib
 import re
 import sqlite3
 from dataclasses import dataclass
-from datetime import date, timedelta as td
+from datetime import date
+from datetime import timedelta as td
 from fractions import Fraction
+from itertools import combinations
 from pathlib import Path, PosixPath, PurePosixPath
 from pprint import pprint
-from itertools import combinations
 from typing import Literal
 
 import bs4
@@ -239,6 +241,24 @@ def main():
 
     unique_books = get_unique_books(book_info, progress)
     pprint({f.name: i for f, i in unique_books.items()})
+    reading_time_by_date = defaultdict(td)
+    total_reading_time_by_date = defaultdict(td)
+    for file, stats in daily_progress.items():
+        for day in stats.daily_stats:
+            total_reading_time_by_date[day.day] += day.reading_time
+        if file not in unique_books:
+            continue
+        for day in stats.daily_stats:
+            reading_time_by_date[day.day] += day.reading_time
+
+    pprint({k: str(v) for k, v in reading_time_by_date.items()})
+    print(sum(total_reading_time_by_date.values(), start=td(0)))
+    print(sum(reading_time_by_date.values(), start=td(0)))
+
+    from render_html import create_graph
+
+    t = create_graph(reading_time_by_date)
+    Path("temp.html").write_text(t)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,173 @@
+:root{
+  --cell-dimension: 15px;
+  --column-width:    1px;
+  --tooltip-bg: rgba(0.85, 0.85, 0.85, 0.8);
+  --tooltip-border: rgb(0.85, 0.85, 0.85);
+  --tooltip-color: white;
+  --accent-gray: #aaa;
+  --tooltip-width:  235px;
+  --tooltip-height:  30px;
+  --tooltip-top:    -45px;
+}
+
+.contrib_grad0 { background-color: #eee; }
+.contrib_grad1 { background-color: #d6e685; }
+.contrib_grad2 { background-color: #8cc665; }
+.contrib_grad3 { background-color: #44a340; }
+.contrib_grad4 { background-color: #1e6823; }
+
+
+/*------------------------------------*\
+  # PANEL STYLES
+\*------------------------------------*/
+
+.panel {
+  margin-left:  auto;
+  margin-right: auto;
+  margin-top: 40px;
+  margin-bottom: 40px;
+}
+
+.panel-heading {
+  font-size: 1.5em;
+  font-weight: bold;
+  text-align: center;
+}
+
+
+/*------------------------------------*\
+  # CELLS
+\*------------------------------------*/
+
+.calendar-row {
+  display: table;
+  border-spacing: calc(var(--column-width) * 2) var(--column_width);
+}
+
+.cell {
+  width:      var(--cell-dimension);
+  height:     var(--cell-dimension);
+  min-width:  var(--cell-dimension);
+  min-height: var(--cell-dimension);
+  margin: var(--column-width);
+  display: table-cell;
+  resize: none;
+}
+
+.cell:hover {
+/*  border: 1px solid #333;*/
+  box-shadow: rgba(0, 0, 0, 0.02) 0px 1px 3px 0px, rgba(27, 31, 35, 0.75) 0px 0px 0px 1px;
+}
+
+.contrib_empty:hover {
+  box-shadow: none;
+}
+
+.weekday-heading {
+  color: #ccc;
+  text-align: right;
+  font-size: 0.8em;
+  padding-right: 3px;
+  width: calc(var(--cell-dimension) * 2);
+  line-height: var(--cell-dimension);
+}
+
+.month-heading {
+  width: calc(2 * var(--cell-dimension) + var(--column-width));
+  font-size: 0.8em;
+  text-align: left;
+  color: #aaa;
+}
+
+.legend {
+  margin-top: 16px;
+}
+
+
+/*------------------------------------*\
+  # TOOLTIPS
+\*------------------------------------*/
+/*
+// This tooltip code isn't mine - there are quite a few CSS-only tooltips
+// if you search Google. I don't remember where I got this originally; it's
+// been sitting in my back pocket for a while. :-/
+*/
+.cell {
+  position: relative;
+  z-index: 24;
+}
+
+.cell:hover {
+  z-index: 25;
+}
+
+.cell span {
+  display: none;
+}
+
+.cell:hover span {
+  width:  var(--tooltip-width);
+  height: var(--tooltip-height);
+  top:    var(--tooltip-top);
+  left:   calc(-(var(--tooltip-width) - var(--cell_dimension)) / 2);
+
+  display:  inline-block;
+  position: absolute;
+
+  background-color: var(--tooltip-bg);
+  color: var(--tooltip-color);
+  text-align: center;
+  font-size: 12px;
+  border-radius: 4px;
+  line-height: var(--tooltip-height);
+  vertical-align: middle;
+}
+
+.cell:hover span:before {
+  border: solid;
+  border-color: var(--tooltip-bg) transparent;
+  border-width: 7px 7px 0 7px;
+  bottom: -7px;
+  content: "";
+  left: calc((var(--tooltip-width) - var(--cell_dimension)) / 2);
+  position: absolute;
+  z-index: 99;
+}
+
+.contrib_empty:hover span {
+  display: none;
+}
+
+
+/*------------------------------------*\
+  # STATISTICS
+\*------------------------------------*/
+
+.statistics.row {
+  border-top: 1px solid #ddd;
+  width: 100%;
+  margin-left:  auto;
+  margin-right: auto;
+}
+
+.statistics .col-md-4 {
+  text-align: center;
+  padding-bottom: 10px;
+  padding-top: 12px;
+}
+
+.col-md-4.middle {
+  border-left:  1px solid #ddd;
+  border-right: 1px solid #ddd;
+}
+
+.annotation {
+  color: var(--accent-gray);
+  font-size: 0.85em;
+  margin-bottom: 2px;
+}
+
+.big_stat {
+  font-size: 2.4em;
+  margin-bottom: 5px;
+}
