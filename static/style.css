@@ -41,7 +41,7 @@
 
 .calendar-row {
   display: table;
-  border-spacing: calc(var(--column-width) * 2) var(--column_width);
+  border-spacing: calc(var(--column-width) * 2) var(--column-width);
 }
 
 .cell {
@@ -109,7 +109,7 @@
   width:  var(--tooltip-width);
   height: var(--tooltip-height);
   top:    var(--tooltip-top);
-  left:   calc(-(var(--tooltip-width) - var(--cell_dimension)) / 2);
+  left:   calc(-(var(--tooltip-width) - var(--cell-dimension)) / 2);
 
   display:  inline-block;
   position: absolute;
@@ -129,7 +129,7 @@
   border-width: 7px 7px 0 7px;
   bottom: -7px;
   content: "";
-  left: calc((var(--tooltip-width) - var(--cell_dimension)) / 2);
+  left: calc((var(--tooltip-width) - var(--cell-dimension)) / 2);
   position: absolute;
   z-index: 99;
 }
