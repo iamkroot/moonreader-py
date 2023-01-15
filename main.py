@@ -1,18 +1,23 @@
-from collections import Counter, defaultdict
+import argparse
 import difflib
+import json
+import logging
 import re
 import sqlite3
+from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from datetime import timedelta as td
 from fractions import Fraction
 from itertools import combinations
 from pathlib import Path, PosixPath, PurePosixPath
-from pprint import pprint
+from pprint import pformat
 from typing import Literal
 
 import bs4
 from bs4 import BeautifulSoup
+
+logging.basicConfig(level=logging.INFO)
 
 DIR = Path.home() / "Downloads/com.flyersoft.moonreaderp"
 
@@ -119,7 +124,7 @@ def get_daily_progress(
         book_stats = BookReadStats(reading_time, row['readWords'], all_stats)
         if old := stats.get(file):
             # just to be extra sure
-            print(f"duplicate! {file=}, {old=}, {book_stats=}")
+            logging.warning(f"duplicate! {file=}, {old=}, {book_stats=}")
         stats[file] = book_stats
     cur.close()
     return stats
@@ -209,24 +214,22 @@ def get_unique_books(
         if not g1.isdisjoint(g2):
             raise Exception(f"Book(s) {g1 & g2} in both groups", g1, g2)
 
-    print("got", len(groups), "unique books from total", len(books), "books")
+    logging.info(f"got {len(groups)} unique books from total {len(books)} books")
 
     unique_books = {}
     for group in groups:
         if len(group) > 1:
             max_progress = max(group, key=lambda file: progress.get(file, 0))
             prog = round(float(progress[max_progress]), 2)
-            print(
-                f"picked {max_progress.name} at {prog} from",
-                {k.name: progress.get(k, 0) for k in group},
-            )
+            d = {k.name: progress.get(k, 0) for k in group}
+            logging.debug(f"picked {max_progress.name} at {prog} from {d}")
         else:
             max_progress = next(iter(group))
         unique_books[max_progress] = books[max_progress]
     return unique_books
 
 
-def main():
+def get_reading_time():
     con = sqlite3.connect(DB_PATH)
     con.row_factory = sqlite3.Row
 
@@ -240,7 +243,7 @@ def main():
     # pprint(progress)
 
     unique_books = get_unique_books(book_info, progress)
-    pprint({f.name: i for f, i in unique_books.items()})
+    logging.debug(pformat({f.name: i for f, i in unique_books.items()}))
     reading_time_by_date = defaultdict(td)
     total_reading_time_by_date = defaultdict(td)
     for file, stats in daily_progress.items():
@@ -251,14 +254,40 @@ def main():
         for day in stats.daily_stats:
             reading_time_by_date[day.day] += day.reading_time
 
-    pprint({k: str(v) for k, v in reading_time_by_date.items()})
-    print(sum(total_reading_time_by_date.values(), start=td(0)))
-    print(sum(reading_time_by_date.values(), start=td(0)))
+    stats = False
+    if stats:
+        total_read_time = sum(reading_time_by_date.values(), start=td(0))
+        logging.info(total_read_time)
+        # logging.debug(sum(total_reading_time_by_date.values(), start=td(0)))
+    logging.debug(pformat({k: str(v) for k, v in reading_time_by_date.items()}))
+    return reading_time_by_date
 
+
+def render_graph():
     from render_html import create_graph
-
+    reading_time_by_date = get_reading_time()
     t = create_graph(reading_time_by_date)
     Path("temp.html").write_text(t)
+
+
+def main():
+    parser = argparse.ArgumentParser("moonm")
+    parser.add_argument("--stats", action="store_true", default=False)
+    parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
+    sp = parser.add_subparsers()
+    jsonp = sp.add_parser("json")
+    jsonp.add_argument("outfile", type=Path)
+    jsonp.add_argument("--action", default="json", choices=["json"])
+    htmlp = sp.add_parser("html")
+    htmlp.add_argument("outfile", type=Path)
+    htmlp.add_argument("--action", default="html", choices=["html"])
+    args = parser.parse_args()
+    print(args)
+    logging.root.setLevel(logging._nameToLevel[args.loglevel])
+    if args.action == "json":
+        reading_time_by_date = get_reading_time()
+        with open(args.outfile, "w") as f:
+            json.dump({d.isoformat(): v.total_seconds() for d, v in reading_time_by_date.items()}, f)
 
 
 if __name__ == "__main__":
