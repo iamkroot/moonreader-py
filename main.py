@@ -19,11 +19,6 @@ from bs4 import BeautifulSoup
 
 logging.basicConfig(level=logging.INFO)
 
-DIR = Path.home() / "Downloads/com.flyersoft.moonreaderp"
-
-PROG_FILE = DIR / "24.tag"
-DB_PATH = DIR / "39.tag"
-
 PROGRESS_RE = re.compile(
     r"""
     (^(?P<no1>[\d]+))           # unknown field 1
@@ -225,12 +220,15 @@ def get_unique_books(
             logging.debug(f"picked {max_progress.name} at {prog} from {d}")
         else:
             max_progress = next(iter(group))
+        if max_progress not in progress:
+            logging.debug(f"removing book {max_progress} because it is missing from progress file")
+            continue
         unique_books[max_progress] = books[max_progress]
     return unique_books
 
 
-def get_reading_time():
-    con = sqlite3.connect(DB_PATH)
+def get_reading_time(db_file: Path, progress_file: Path):
+    con = sqlite3.connect(db_file)
     con.row_factory = sqlite3.Row
 
     daily_progress = get_daily_progress(con)
@@ -239,7 +237,7 @@ def get_reading_time():
     book_info = get_book_info(con)
     # pprint(book_info)
 
-    progress = get_progress(PROG_FILE, book_info)
+    progress = get_progress(progress_file, book_info)
     # pprint(progress)
 
     unique_books = get_unique_books(book_info, progress)
@@ -254,6 +252,8 @@ def get_reading_time():
         for day in stats.daily_stats:
             reading_time_by_date[day.day] += day.reading_time
 
+    reading_time_by_date = {d: reading_time_by_date[d] for d in sorted(reading_time_by_date)}
+
     stats = False
     if stats:
         total_read_time = sum(reading_time_by_date.values(), start=td(0))
@@ -263,31 +263,51 @@ def get_reading_time():
     return reading_time_by_date
 
 
-def render_graph():
+def render_graph(db_file: Path, progress_file: Path, out_path: Path):
     from render_html import create_graph
-    reading_time_by_date = get_reading_time()
+    reading_time_by_date = get_reading_time(db_file, progress_file)
     t = create_graph(reading_time_by_date)
-    Path("temp.html").write_text(t)
+    out_path.write_text(t)
+
+
+def get_data_files(data_dir: Path):
+    assert data_dir.exists()
+
+    namesfile = data_dir / "_names.list"
+    db_file, progress_file = None, None
+    for i, line in enumerate(namesfile.read_text().strip().splitlines(), 1):
+        if line.endswith("positions10.xml"):
+            progress_file = data_dir / f"{i}.tag"
+            assert progress_file.exists()
+        elif line.endswith("mrbooks.db"):
+            db_file = data_dir / f"{i}.tag"
+            assert db_file.exists()
+    assert db_file
+    assert progress_file
+    return db_file, progress_file
 
 
 def main():
     parser = argparse.ArgumentParser("moonm")
     parser.add_argument("--stats", action="store_true", default=False)
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
-    sp = parser.add_subparsers()
+    parser.add_argument("--data_dir", type=Path, required=True)
+    sp = parser.add_subparsers(dest="action")
     jsonp = sp.add_parser("json")
     jsonp.add_argument("outfile", type=Path)
-    jsonp.add_argument("--action", default="json", choices=["json"])
     htmlp = sp.add_parser("html")
     htmlp.add_argument("outfile", type=Path)
-    htmlp.add_argument("--action", default="html", choices=["html"])
     args = parser.parse_args()
-    print(args)
     logging.root.setLevel(logging._nameToLevel[args.loglevel])
+
+    db_file, progress_file = get_data_files(args.data_dir)
+
     if args.action == "json":
-        reading_time_by_date = get_reading_time()
+        reading_time_by_date = get_reading_time(db_file, progress_file)
         with open(args.outfile, "w") as f:
             json.dump({d.isoformat(): v.total_seconds() for d, v in reading_time_by_date.items()}, f)
+    elif args.action == "html":
+        render_graph(db_file, progress_file, args.outfile)
 
 
 if __name__ == "__main__":
