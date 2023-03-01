@@ -10,12 +10,14 @@ from datetime import date
 from datetime import timedelta as td
 from fractions import Fraction
 from itertools import combinations
+from os import PathLike
 from pathlib import Path, PosixPath, PurePosixPath
 from pprint import pformat
-from typing import Literal
+from typing import Callable, Literal
 
 import bs4
 from bs4 import BeautifulSoup
+from gitignore_parser import parse_gitignore
 
 logging.basicConfig(level=logging.INFO)
 
@@ -32,6 +34,12 @@ PROGRESS_RE = re.compile(
 DAILY_STATS_RE = re.compile(r"(?P<day_delta>\d+)\|(?P<time_ms>\d+)@(?P<words>\d+)")
 UNIX_EPOCH = date.fromtimestamp(0)
 TODAY = date.today()
+
+IGNOREFILE_NAME = "excluded.gitignore"
+MR_ATTACH_DIR = "/sdcard/"
+"""This will be considered as the base path when deciding which files to ignore"""
+IgnoreMatcher = Callable[[PathLike], bool]
+DEFAULT_IGNORE_MATCHER: IgnoreMatcher = lambda _: False
 
 
 @dataclass(slots=True, frozen=True)
@@ -215,19 +223,26 @@ def get_unique_books(
     for group in groups:
         if len(group) > 1:
             max_progress = max(group, key=lambda file: progress.get(file, 0))
-            prog = round(float(progress[max_progress]), 2)
+            # verbose info
+            prog = round(float(progress.get(max_progress, 0)), 2)
             d = {k.name: progress.get(k, 0) for k in group}
             logging.debug(f"picked {max_progress.name} at {prog} from {d}")
         else:
             max_progress = next(iter(group))
         if max_progress not in progress:
-            logging.debug(f"removing book {max_progress} because it is missing from progress file")
+            logging.debug(
+                f"removing book {max_progress} because it is missing from progress file"
+            )
             continue
         unique_books[max_progress] = books[max_progress]
     return unique_books
 
 
-def get_reading_time(db_file: Path, progress_file: Path):
+def get_reading_time(
+    db_file: Path,
+    progress_file: Path,
+    ignore_matcher: IgnoreMatcher = DEFAULT_IGNORE_MATCHER,
+):
     con = sqlite3.connect(db_file)
     con.row_factory = sqlite3.Row
 
@@ -239,6 +254,9 @@ def get_reading_time(db_file: Path, progress_file: Path):
 
     progress = get_progress(progress_file, book_info)
     # pprint(progress)
+    progress = {
+        path: prog for path, prog in progress.items() if not ignore_matcher(path)
+    }
 
     unique_books = get_unique_books(book_info, progress)
     logging.debug(pformat({f.name: i for f, i in unique_books.items()}))
@@ -252,7 +270,9 @@ def get_reading_time(db_file: Path, progress_file: Path):
         for day in stats.daily_stats:
             reading_time_by_date[day.day] += day.reading_time
 
-    reading_time_by_date = {d: reading_time_by_date[d] for d in sorted(reading_time_by_date)}
+    reading_time_by_date = {
+        d: reading_time_by_date[d] for d in sorted(reading_time_by_date)
+    }
 
     stats = False
     if stats:
@@ -265,6 +285,7 @@ def get_reading_time(db_file: Path, progress_file: Path):
 
 def render_graph(db_file: Path, progress_file: Path, out_path: Path):
     from render_html import create_graph
+
     reading_time_by_date = get_reading_time(db_file, progress_file)
     t = create_graph(reading_time_by_date)
     out_path.write_text(t)
@@ -287,11 +308,36 @@ def get_data_files(data_dir: Path):
     return db_file, progress_file
 
 
+def get_ignore_matcher(data_dir: Path, ignorefile: str) -> IgnoreMatcher:
+    options = (
+        Path(ignorefile),
+        data_dir / ignorefile,
+        data_dir.parent / ignorefile,
+        Path.cwd() / ignorefile,
+    )
+    for path in options:
+        if path.exists():
+            return parse_gitignore(path, MR_ATTACH_DIR)
+
+    # no matches
+    if ignorefile != IGNOREFILE_NAME:
+        # user has provided a custom ignorefile. Halt if not found
+        raise Exception(
+            f"Could not locate {ignorefile=} in any of " + ", ".join(map(str, options))
+        )
+    return DEFAULT_IGNORE_MATCHER
+
+
 def main():
     parser = argparse.ArgumentParser("moonm")
     parser.add_argument("--stats", action="store_true", default=False)
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
-    parser.add_argument("--data_dir", type=Path, required=True)
+    parser.add_argument("--data-dir", type=Path, required=True)
+    parser.add_argument(
+        "--ignorefile",
+        help="Path/name of ignore file. It should follow the gitignore file format.",
+        default=IGNOREFILE_NAME,
+    )
     sp = parser.add_subparsers(dest="action")
     jsonp = sp.add_parser("json")
     jsonp.add_argument("outfile", type=Path)
@@ -300,12 +346,20 @@ def main():
     args = parser.parse_args()
     logging.root.setLevel(logging._nameToLevel[args.loglevel])
 
+    ignore_matcher = get_ignore_matcher(args.data_dir, args.ignorefile)
+
     db_file, progress_file = get_data_files(args.data_dir)
 
     if args.action == "json":
-        reading_time_by_date = get_reading_time(db_file, progress_file)
+        reading_time_by_date = get_reading_time(db_file, progress_file, ignore_matcher)
         with open(args.outfile, "w") as f:
-            json.dump({d.isoformat(): v.total_seconds() for d, v in reading_time_by_date.items()}, f)
+            json.dump(
+                {
+                    d.isoformat(): v.total_seconds()
+                    for d, v in reading_time_by_date.items()
+                },
+                f,
+            )
     elif args.action == "html":
         render_graph(db_file, progress_file, args.outfile)
 
