@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import sqlite3
+import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -18,6 +19,12 @@ from typing import Callable, Literal
 import bs4
 from bs4 import BeautifulSoup
 from gitignore_parser import parse_gitignore
+
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -67,7 +74,7 @@ class BookReadStats:
     daily_stats: list[DailyStats]
 
 
-@dataclass(slots=True)
+@dataclass(slots=True, frozen=True, unsafe_hash=True)
 class BookMetadata:
     title: str
     author: str
@@ -238,11 +245,50 @@ def get_unique_books(
     return unique_books
 
 
+def parse_manual_progress(file: Path) -> dict[BookMetadata, DailyStats]:
+    data = tomllib.loads(file.read_text())
+    output = {}
+    # could probably use pydantic for this, but meh
+    for book in data.get("books", []):
+        bmd = BookMetadata(book['title'], book['author'])
+        daily_stats: list[DailyStats] = []
+        output[bmd] = daily_stats
+        for session in book['sessions']:
+            if 'day' in session:  # single date
+                assert isinstance(session['day'], date)
+                ds = DailyStats(
+                    day=session['day'],
+                    num_words=session.get("num_words", 0),
+                    reading_time=td(seconds=session['reading_time']),
+                )
+                daily_stats.append(ds)
+            else:  # range of dates
+                assert isinstance(session['start'], date)
+                assert isinstance(session['end'], date)
+                total_time = session['reading_time']
+                total_words = session.get('num_words', 0)
+                end = session['end'] + td(days=1)
+                num_days = (end - session['start']).days
+                time_per_day = td(seconds=total_time / num_days)
+                words_per_day = total_words / num_days
+                day = session['start']
+                while day != end:
+                    ds = DailyStats(
+                        day=day, num_words=words_per_day, reading_time=time_per_day
+                    )
+                    daily_stats.append(ds)
+                    day = day + td(days=1)
+
+        for (day1, day2) in combinations(daily_stats, r=2):
+            assert day1.day != day2.day, f"overlapping days found! {day1} {day2}"
+    return output
+
+
 def get_reading_time(
     db_file: Path,
     progress_file: Path,
     ignore_matcher: IgnoreMatcher = DEFAULT_IGNORE_MATCHER,
-):
+) -> dict[date, td]:
     con = sqlite3.connect(db_file)
     con.row_factory = sqlite3.Row
 
@@ -283,10 +329,9 @@ def get_reading_time(
     return reading_time_by_date
 
 
-def render_graph(db_file: Path, progress_file: Path, out_path: Path):
+def render_graph(reading_time_by_date, out_path: Path):
     from render_html import create_graph
 
-    reading_time_by_date = get_reading_time(db_file, progress_file)
     t = create_graph(reading_time_by_date)
     out_path.write_text(t)
 
@@ -338,6 +383,9 @@ def main():
         help="Path/name of ignore file. It should follow the gitignore file format.",
         default=IGNOREFILE_NAME,
     )
+    parser.add_argument(
+        "--manual-progress-file", type=Path, default=Path("data/manual.toml")
+    )
     sp = parser.add_subparsers(dest="action")
     jsonp = sp.add_parser("json")
     jsonp.add_argument("outfile", type=Path)
@@ -350,8 +398,8 @@ def main():
 
     db_file, progress_file = get_data_files(args.data_dir)
 
+    reading_time_by_date = get_reading_time(db_file, progress_file, ignore_matcher)
     if args.action == "json":
-        reading_time_by_date = get_reading_time(db_file, progress_file, ignore_matcher)
         with open(args.outfile, "w") as f:
             json.dump(
                 {
@@ -361,8 +409,11 @@ def main():
                 f,
             )
     elif args.action == "html":
-        render_graph(db_file, progress_file, args.outfile)
+        render_graph(reading_time_by_date, args.outfile)
 
 
 if __name__ == "__main__":
-    main()
+    # main()
+    from pprint import pprint
+
+    pprint(parse_manual_progress(Path("data/manual.toml")))
