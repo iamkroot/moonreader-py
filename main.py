@@ -5,6 +5,7 @@ import logging
 import re
 import sqlite3
 import sys
+import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
@@ -361,6 +362,17 @@ def get_data_files(data_dir: Path):
     return db_file, progress_file
 
 
+def extract_data_archive(archive_path: Path) -> Path:
+    zf = zipfile.ZipFile(archive_path)
+    extract_path = archive_path.parent / archive_path.stem
+    zf.extractall(extract_path)
+    inner_dir = extract_path / "com.flyersoft.moonreaderp"
+    for f in inner_dir.iterdir():
+        f.rename(extract_path / f.name)
+    inner_dir.rmdir()
+    return extract_path
+
+
 def get_ignore_matcher(data_dir: Path, ignorefile: str) -> IgnoreMatcher:
     options = (
         Path(ignorefile),
@@ -385,7 +397,9 @@ def main():
     parser = argparse.ArgumentParser("moonm")
     parser.add_argument("--stats", action="store_true", default=False)
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
-    parser.add_argument("--data-dir", type=Path, required=True)
+    data_p = parser.add_mutually_exclusive_group(required=True)
+    data_p.add_argument("--data-dir", type=Path)
+    data_p.add_argument("--archive-path", type=Path)
     parser.add_argument(
         "--ignorefile",
         help="Path/name of ignore file. It should follow the gitignore file format.",
@@ -402,9 +416,13 @@ def main():
     args = parser.parse_args()
     logging.root.setLevel(logging._nameToLevel[args.loglevel])
 
-    ignore_matcher = get_ignore_matcher(args.data_dir, args.ignorefile)
+    if args.archive_path:
+        data_dir = extract_data_archive(args.archive_path)
+    else:
+        data_dir = args.data_dir
+    ignore_matcher = get_ignore_matcher(data_dir, args.ignorefile)
 
-    db_file, progress_file = get_data_files(args.data_dir)
+    db_file, progress_file = get_data_files(data_dir)
 
     reading_time_by_date = get_reading_time(
         db_file, progress_file, args.manual_progress_file, ignore_matcher
@@ -421,6 +439,11 @@ def main():
     elif args.action == "html":
         render_graph(reading_time_by_date, args.outfile)
 
+    if args.archive_path:
+        # clean up
+        for f in data_dir.iterdir():
+            f.unlink()
+        data_dir.rmdir()
 
 if __name__ == "__main__":
     main()
