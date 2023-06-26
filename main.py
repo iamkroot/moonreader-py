@@ -245,7 +245,9 @@ def get_unique_books(
     return unique_books
 
 
-def parse_manual_progress(file: Path) -> dict[BookMetadata, DailyStats]:
+def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
+    if not file.exists():
+        return {}
     data = tomllib.loads(file.read_text())
     output = {}
     # could probably use pydantic for this, but meh
@@ -287,6 +289,7 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, DailyStats]:
 def get_reading_time(
     db_file: Path,
     progress_file: Path,
+    manual_progress_file: Path,
     ignore_matcher: IgnoreMatcher = DEFAULT_IGNORE_MATCHER,
 ) -> dict[date, td]:
     con = sqlite3.connect(db_file)
@@ -314,6 +317,11 @@ def get_reading_time(
         if file not in unique_books:
             continue
         for day in stats.daily_stats:
+            reading_time_by_date[day.day] += day.reading_time
+
+    # add values from manual progress entries
+    for stats in parse_manual_progress(manual_progress_file).values():
+        for day in stats:
             reading_time_by_date[day.day] += day.reading_time
 
     reading_time_by_date = {
@@ -398,7 +406,9 @@ def main():
 
     db_file, progress_file = get_data_files(args.data_dir)
 
-    reading_time_by_date = get_reading_time(db_file, progress_file, ignore_matcher)
+    reading_time_by_date = get_reading_time(
+        db_file, progress_file, args.manual_progress_file, ignore_matcher
+    )
     if args.action == "json":
         with open(args.outfile, "w") as f:
             json.dump(
@@ -413,7 +423,4 @@ def main():
 
 
 if __name__ == "__main__":
-    # main()
-    from pprint import pprint
-
-    pprint(parse_manual_progress(Path("data/manual.toml")))
+    main()
