@@ -435,6 +435,7 @@ def main():
                     for d, v in reading_time_by_date.items()
                 },
                 f,
+                indent=2,
             )
     elif args.action == "html":
         render_graph(reading_time_by_date, args.outfile)
