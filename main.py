@@ -142,7 +142,10 @@ def get_daily_progress(
 
 
 def get_book_info(db_con: sqlite3.Connection) -> BookMetadataDict:
-    cur = db_con.execute("SELECT * FROM 'tmpbooks'")
+    cur = db_con.execute("""SELECT t.filename,
+            COALESCE(b.book, t.book) as book,
+            COALESCE(b.author, t.author) as author
+        FROM 'books' b RIGHT JOIN 'tmpbooks' t ON b.filename = t.filename;""")
     metadata = {}
     for row in cur.fetchall():
         file = PurePosixPath(row['filename'])
