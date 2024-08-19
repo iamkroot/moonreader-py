@@ -300,7 +300,10 @@ def get_reading_time(
     con.row_factory = sqlite3.Row
 
     daily_progress = get_daily_progress(con)
+    # from pprint import pprint
     # pprint(daily_progress)
+    # for book, stats in daily_progress.items():
+    #     print(stats.daily_stats[-1].day.isoformat(), book.name)
 
     book_info = get_book_info(con)
     # pprint(book_info)
@@ -433,10 +436,10 @@ def main():
     if args.action == "json":
         with open(args.outfile, "w") as f:
             json.dump(
-                {
+                {"stats": {
                     d.isoformat(): v.total_seconds()
                     for d, v in reading_time_by_date.items()
-                },
+                }},
                 f,
                 indent=2,
             )
