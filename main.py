@@ -1,10 +1,24 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12"
+# dependencies = [
+#     "beautifulsoup4 >= 4.11.1",
+#     "jinja2 >= 3.1.2",
+#     "gitignore-parser >= 0.1.3",
+#     "lxml >= 5.3.0",
+#     "tomli >= 2.0.1; python_version < '3.11'",
+# ]
+# ///
+
 import argparse
 import difflib
 import json
 import logging
 import re
+import shutil
 import sqlite3
 import sys
+import tempfile
 import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
@@ -370,7 +384,7 @@ def get_data_files(data_dir: Path):
 
 def extract_data_archive(archive_path: Path) -> Path:
     zf = zipfile.ZipFile(archive_path)
-    extract_path = archive_path.parent / archive_path.stem
+    extract_path = Path(tempfile.mkdtemp(prefix=f"moon_reader_{archive_path.stem}"))
     zf.extractall(extract_path)
     inner_dir = extract_path / "com.flyersoft.moonreaderp"
     for f in inner_dir.iterdir():
@@ -448,9 +462,7 @@ def main():
 
     if args.archive_path:
         # clean up
-        for f in data_dir.iterdir():
-            f.unlink()
-        data_dir.rmdir()
+        shutil.rmtree(data_dir, ignore_errors=True)
 
 if __name__ == "__main__":
     main()
