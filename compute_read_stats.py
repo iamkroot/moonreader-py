@@ -6,6 +6,7 @@
 #     "jinja2 >= 3.1.2",
 #     "gitignore-parser >= 0.1.3",
 #     "lxml >= 5.3.0",
+#     "rich>=14.2.0",
 #     "tomli >= 2.0.1; python_version < '3.11'",
 # ]
 # ///
@@ -28,12 +29,13 @@ from fractions import Fraction
 from itertools import combinations
 from os import PathLike
 from pathlib import Path, PosixPath, PurePosixPath
-from pprint import pformat
 from typing import Callable, Literal
 
 import bs4
 from bs4 import BeautifulSoup
 from gitignore_parser import parse_gitignore
+from rich.logging import RichHandler
+from rich.pretty import pretty_repr
 
 if sys.version_info >= (3, 11):
     import tomllib
@@ -41,7 +43,7 @@ else:
     import tomli as tomllib
 
 
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(format="%(message)s", level=logging.INFO, handlers=[RichHandler()])
 
 PROGRESS_RE = re.compile(
     r"""
@@ -95,7 +97,7 @@ class BookMetadata:
     author: str
 
 
-OverallProgressDict = dict[PurePosixPath, Fraction]
+type OverallProgressDict = dict[PurePosixPath, Fraction]
 BookStatsDict = dict[PurePosixPath, BookReadStats]
 BookMetadataDict = dict[PurePosixPath, BookMetadata]
 
@@ -314,13 +316,13 @@ def get_reading_time(
     con.row_factory = sqlite3.Row
 
     daily_progress = get_daily_progress(con)
-    # from pprint import pprint
-    # pprint(daily_progress)
+    from rich.pretty import pprint
+    pprint(daily_progress)
     # for book, stats in daily_progress.items():
     #     print(stats.daily_stats[-1].day.isoformat(), book.name)
 
     book_info = get_book_info(con)
-    # pprint(book_info)
+    pprint(book_info)
 
     progress = get_progress(progress_file, book_info)
     # pprint(progress)
@@ -329,7 +331,7 @@ def get_reading_time(
     }
 
     unique_books = get_unique_books(book_info, progress)
-    logging.debug(pformat({f.name: i for f, i in unique_books.items()}))
+    logging.debug(pretty_repr({f.name: i for f, i in unique_books.items()}))
     reading_time_by_date = defaultdict(td)
     total_reading_time_by_date = defaultdict(td)
     for file, stats in daily_progress.items():
@@ -353,8 +355,7 @@ def get_reading_time(
     if stats:
         total_read_time = sum(reading_time_by_date.values(), start=td(0))
         logging.info(total_read_time)
-        # logging.debug(sum(total_reading_time_by_date.values(), start=td(0)))
-    logging.debug(pformat({k: str(v) for k, v in reading_time_by_date.items()}))
+        logging.debug(sum(total_reading_time_by_date.values(), start=td(0)))
     return reading_time_by_date
 
 
