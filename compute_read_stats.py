@@ -25,12 +25,14 @@ from collections import defaultdict
 from dataclasses import dataclass
 from datetime import date
 from datetime import timedelta as td
+from datetime import datetime as dt
 from fractions import Fraction
 from functools import partial
 from itertools import combinations, starmap
 from os import PathLike
 from pathlib import Path, PosixPath, PurePosixPath
 from typing import Callable, Literal
+from zoneinfo import ZoneInfo
 
 import bs4
 from bs4 import BeautifulSoup
@@ -44,7 +46,7 @@ else:
     import tomli as tomllib
 
 
-logging.basicConfig(format="%(message)s", level=logging.INFO, handlers=[RichHandler()])
+logging.basicConfig(format="%(message)s", level=logging.INFO, handlers=[RichHandler(rich_tracebacks=True)])
 
 PROGRESS_RE = re.compile(
     r"""
@@ -55,10 +57,7 @@ PROGRESS_RE = re.compile(
     """,
     re.VERBOSE,
 )
-
 DAILY_STATS_RE = re.compile(r"(?P<day_delta>\d+)\|(?P<time_ms>\d+)@(?P<words>\d+)")
-UNIX_EPOCH = date.fromtimestamp(0)
-TODAY = date.today()
 
 IGNOREFILE_NAME = "excluded.gitignore"
 MR_ATTACH_DIR = "/sdcard/"
@@ -66,10 +65,20 @@ MR_ATTACH_DIR = "/sdcard/"
 IgnoreMatcher = Callable[[PathLike], bool]
 DEFAULT_IGNORE_MATCHER: IgnoreMatcher = lambda _: False
 
+TZ = ZoneInfo("America/Los_Angeles")
+# FIXME: This is a hack!!
+# Had to add this when I changed timezones
+UNIX_EPOCH = dt(1970, 1, 1, tzinfo=TZ) - td(1)
+TODAY = dt.now(TZ)
+
+
+def date_to_dt(day: date):
+    return dt.combine(day, UNIX_EPOCH.time(), TZ)
+
 
 @dataclass(slots=True, frozen=True, unsafe_hash=True)
 class DailyStats:
-    day: date
+    day: dt
     reading_time: td
     num_words: int
 
@@ -85,7 +94,7 @@ class DailyStats:
         return DailyStats(day, reading_time, words)
 
     def __str__(self) -> str:
-        return f"read {self.num_words} words on {self.day.isoformat()} in {self.reading_time.total_seconds()} seconds"
+        return f"read {self.num_words} words on {self.day.date().isoformat()} in {self.reading_time.total_seconds()} seconds"
 
 
 @dataclass(slots=True, frozen=True)
@@ -138,8 +147,6 @@ def get_progress(
             progress[file] = val
         else:
             no_match.append((file, entry))
-    if no_match:
-        logging.warning(f"No progress found for {no_match}")
     return progress
 
 
@@ -283,7 +290,7 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
             if 'day' in session:  # single date
                 assert isinstance(session['day'], date)
                 ds = DailyStats(
-                    day=session['day'],
+                    day=date_to_dt(session['day']),
                     num_words=session.get("num_words", 0),
                     reading_time=td(seconds=session['reading_time']),
                 )
@@ -293,11 +300,12 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
                 assert isinstance(session['end'], date)
                 total_time = session['reading_time']
                 total_words = session.get('num_words', 0)
-                end = session['end'] + td(days=1)
-                num_days = (end - session['start']).days
+                start = date_to_dt(session['start'])
+                end = date_to_dt(session['end']) + td(days=1)
+                num_days = (end - start).days
                 time_per_day = td(seconds=total_time / num_days)
                 words_per_day = total_words / num_days
-                day = session['start']
+                day = start
                 while day != end:
                     ds = DailyStats(
                         day=day, num_words=words_per_day, reading_time=time_per_day
@@ -317,6 +325,7 @@ def make_con(db_file):
 
 
 def process_backup(ignore_matcher, db_file: Path, progress_file: Path):
+    logging.info(f"Processing '{db_file.parent.stem.split(".")[0]}'")
     con = make_con(db_file)
     daily_progress = get_daily_progress(con)
     logging.debug(pretty_repr(daily_progress))
@@ -349,23 +358,23 @@ def get_reading_time(
                 if day in processed[file]:
                     logging.debug(f"Cross-archive duplicate! '{file}' {day} first seen in '{db_file}'")
                     continue
-                total_reading_time_by_date[day.day] += day.reading_time
+                total_reading_time_by_date[day.day.date()] += day.reading_time
                 if file not in unique_books:
                     continue
-                reading_time_by_date[day.day] += day.reading_time
+                reading_time_by_date[day.day.date()] += day.reading_time
                 processed[file][day] = db_file
 
     # add values from manual progress entries
     for stats in parse_manual_progress(manual_progress_file).values():
         for day in stats:
-            reading_time_by_date[day.day] += day.reading_time
+            reading_time_by_date[day.day.date()] += day.reading_time
 
     reading_time_by_date = {
         d: reading_time_by_date[d] for d in sorted(reading_time_by_date)
     }
 
-    stats = False
-    if stats:
+    PRINT_STATS = False
+    if PRINT_STATS:
         total_read_time = sum(reading_time_by_date.values(), start=td(0))
         logging.info(total_read_time)
         logging.debug(sum(total_reading_time_by_date.values(), start=td(0)))
@@ -398,7 +407,7 @@ def get_data_files(data_dir: Path):
 
 def extract_data_archive(archive_path: Path) -> Path:
     zf = zipfile.ZipFile(archive_path)
-    extract_path = Path(tempfile.mkdtemp(prefix=f"moon_reader_{archive_path.stem}"))
+    extract_path = Path(tempfile.mkdtemp(prefix=f"{archive_path.stem}.moon_reader."))
     zf.extractall(extract_path)
     inner_dir = extract_path / "com.flyersoft.moonreaderp"
     for f in inner_dir.iterdir():
@@ -432,8 +441,8 @@ def main():
     parser.add_argument("--stats", action="store_true", default=False)
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
     data_p = parser.add_mutually_exclusive_group(required=True)
-    data_p.add_argument("--data-dir", type=Path)
-    data_p.add_argument("--archive-path", type=Path, nargs="+")
+    data_p.add_argument("--data-dirs", type=Path, nargs="+", help="Path to extracted backup. See --archive-path.")
+    data_p.add_argument("--archive-path", type=Path, nargs="+", help="Path to backup archive. Can handle multiple files (eg- a backup per device like ebook reader, phone, etc.). It will automatically prune duplicates from when Moon+ initializes the device DB from another's backup.")
     parser.add_argument(
         "--ignorefile",
         help="Path/name of ignore file. It should follow the gitignore file format.",
@@ -450,7 +459,7 @@ def main():
     if args.archive_path:
         data_dirs = [extract_data_archive(p) for p in args.archive_path]
     else:
-        data_dirs = [args.data_dir]
+        data_dirs = args.data_dirs
     ignore_matcher = get_ignore_matcher(data_dirs[0], args.ignorefile)
 
     data_files = [get_data_files(data_dir) for data_dir in data_dirs]
