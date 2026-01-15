@@ -279,6 +279,7 @@ def get_unique_books(
 def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
     if not file.exists():
         return {}
+    logging.info(f"Getting manual progress from '{file}'")
     data = tomllib.loads(file.read_text())
     output = {}
     # could probably use pydantic for this, but meh
@@ -318,28 +319,24 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
     return output
 
 
-def make_con(db_file):
-    con = sqlite3.connect(db_file)
-    con.row_factory = sqlite3.Row
-    return con
-
-
 def process_backup(ignore_matcher, db_file: Path, progress_file: Path):
     logging.info(f"Processing '{db_file.parent.stem.split(".")[0]}'")
-    con = make_con(db_file)
+    con = sqlite3.connect(db_file)
+    con.row_factory = sqlite3.Row
     daily_progress = get_daily_progress(con)
-    logging.debug(pretty_repr(daily_progress))
     book_info = get_book_info(con)
-    logging.debug(pretty_repr(book_info))
+    if logging.root.isEnabledFor(logging.DEBUG):
+        logging.debug(pretty_repr(daily_progress))
+        logging.debug(pretty_repr(book_info))
     progress = get_progress(progress_file, book_info)
     progress = {
         path: prog for path, prog in progress.items() if not ignore_matcher(path)
     }
 
     unique_books = get_unique_books(book_info, progress)
-    logging.debug(pretty_repr({f.name: i for f, i in unique_books.items()}))
+    if logging.root.isEnabledFor(logging.DEBUG):
+        logging.debug(pretty_repr({f.name: i for f, i in unique_books.items()}))
     return daily_progress, unique_books
-
 
 
 def get_reading_time(
@@ -425,6 +422,7 @@ def get_ignore_matcher(data_dir: Path, ignorefile: str) -> IgnoreMatcher:
     )
     for path in options:
         if path.exists():
+            logging.info(f"Using ignorefile at '{path}'")
             return parse_gitignore(path, MR_ATTACH_DIR)
 
     # no matches
@@ -433,6 +431,7 @@ def get_ignore_matcher(data_dir: Path, ignorefile: str) -> IgnoreMatcher:
         raise Exception(
             f"Could not locate {ignorefile=} in any of " + ", ".join(map(str, options))
         )
+    logging.debug("No ignorefile")
     return DEFAULT_IGNORE_MATCHER
 
 
