@@ -26,7 +26,8 @@ from dataclasses import dataclass
 from datetime import date
 from datetime import timedelta as td
 from fractions import Fraction
-from itertools import combinations
+from functools import partial
+from itertools import combinations, starmap
 from os import PathLike
 from pathlib import Path, PosixPath, PurePosixPath
 from typing import Callable, Literal
@@ -66,7 +67,7 @@ IgnoreMatcher = Callable[[PathLike], bool]
 DEFAULT_IGNORE_MATCHER: IgnoreMatcher = lambda _: False
 
 
-@dataclass(slots=True, frozen=True)
+@dataclass(slots=True, frozen=True, unsafe_hash=True)
 class DailyStats:
     day: date
     reading_time: td
@@ -83,6 +84,9 @@ class DailyStats:
         words = int(match['words'])
         return DailyStats(day, reading_time, words)
 
+    def __str__(self) -> str:
+        return f"read {self.num_words} words on {self.day.isoformat()} in {self.reading_time.total_seconds()} seconds"
+
 
 @dataclass(slots=True, frozen=True)
 class BookReadStats:
@@ -98,8 +102,8 @@ class BookMetadata:
 
 
 type OverallProgressDict = dict[PurePosixPath, Fraction]
-BookStatsDict = dict[PurePosixPath, BookReadStats]
-BookMetadataDict = dict[PurePosixPath, BookMetadata]
+type BookStatsDict = dict[PurePosixPath, BookReadStats]
+type BookMetadataDict = dict[PurePosixPath, BookMetadata]
 
 
 def get_progress(
@@ -122,20 +126,20 @@ def get_progress(
             continue
         if not entry.string:
             continue
-        file = entry.attrs['name']
-        if file_titlecase := names_lower.get(file):
-            file = PurePosixPath(file_titlecase)
-        else:
-            file = PurePosixPath(file)
+        file_path_raw = entry.attrs['name']
+        assert isinstance(file_path_raw, str)
+        file_path_raw = names_lower.get(file_path_raw, file_path_raw)
+        file = PurePosixPath(file_path_raw)
         if match := PROGRESS_RE.match(entry.string):
             val = Fraction(match['percentage'])
             if old := progress.get(file):
                 # just to be extra sure
-                print(f"duplicate! {file=}, {old=}, {val=}")
+                logging.warning(f"duplicate! {file=!r}, {old=!r}, {val=!r}")
             progress[file] = val
         else:
-            no_match.append(file)
-
+            no_match.append((file, entry))
+    if no_match:
+        logging.warning(f"No progress found for {no_match}")
     return progress
 
 
@@ -143,7 +147,7 @@ def get_daily_progress(
     db_con: sqlite3.Connection,
 ) -> BookStatsDict:
     cur = db_con.execute("SELECT * FROM 'statistics'")
-    stats = {}
+    stats: BookStatsDict = {}
     for row in cur.fetchall():
         file = PurePosixPath(row['filename'])
         reading_time = td(milliseconds=row['usedTime'])
@@ -151,7 +155,7 @@ def get_daily_progress(
         book_stats = BookReadStats(reading_time, row['readWords'], all_stats)
         if old := stats.get(file):
             # just to be extra sure
-            logging.warning(f"duplicate! {file=}, {old=}, {book_stats=}")
+            logging.warning(f"duplicate! {file=!r}, {old=!r}, {book_stats=!r}")
         stats[file] = book_stats
     cur.close()
     return stats
@@ -306,41 +310,50 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
     return output
 
 
-def get_reading_time(
-    db_file: Path,
-    progress_file: Path,
-    manual_progress_file: Path,
-    ignore_matcher: IgnoreMatcher = DEFAULT_IGNORE_MATCHER,
-) -> dict[date, td]:
+def make_con(db_file):
     con = sqlite3.connect(db_file)
     con.row_factory = sqlite3.Row
+    return con
 
+
+def process_backup(ignore_matcher, db_file: Path, progress_file: Path):
+    con = make_con(db_file)
     daily_progress = get_daily_progress(con)
-    from rich.pretty import pprint
-    pprint(daily_progress)
-    # for book, stats in daily_progress.items():
-    #     print(stats.daily_stats[-1].day.isoformat(), book.name)
-
+    logging.debug(pretty_repr(daily_progress))
     book_info = get_book_info(con)
-    pprint(book_info)
-
+    logging.debug(pretty_repr(book_info))
     progress = get_progress(progress_file, book_info)
-    # pprint(progress)
     progress = {
         path: prog for path, prog in progress.items() if not ignore_matcher(path)
     }
 
     unique_books = get_unique_books(book_info, progress)
     logging.debug(pretty_repr({f.name: i for f, i in unique_books.items()}))
+    return daily_progress, unique_books
+
+
+
+def get_reading_time(
+    data_files: list[tuple[Path, Path]],
+    manual_progress_file: Path,
+    ignore_matcher: IgnoreMatcher = DEFAULT_IGNORE_MATCHER,
+) -> dict[date, td]:
+    # file -> archive ->
+    processed = defaultdict(dict)
     reading_time_by_date = defaultdict(td)
     total_reading_time_by_date = defaultdict(td)
-    for file, stats in daily_progress.items():
-        for day in stats.daily_stats:
-            total_reading_time_by_date[day.day] += day.reading_time
-        if file not in unique_books:
-            continue
-        for day in stats.daily_stats:
-            reading_time_by_date[day.day] += day.reading_time
+    results = starmap(partial(process_backup, ignore_matcher), data_files)
+    for (db_file, _), (daily_progress, unique_books) in zip(data_files, results):
+        for file, stats in daily_progress.items():
+            for day in stats.daily_stats:
+                if day in processed[file]:
+                    logging.debug(f"Cross-archive duplicate! '{file}' {day} first seen in '{db_file}'")
+                    continue
+                total_reading_time_by_date[day.day] += day.reading_time
+                if file not in unique_books:
+                    continue
+                reading_time_by_date[day.day] += day.reading_time
+                processed[file][day] = db_file
 
     # add values from manual progress entries
     for stats in parse_manual_progress(manual_progress_file).values():
@@ -420,7 +433,7 @@ def main():
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
     data_p = parser.add_mutually_exclusive_group(required=True)
     data_p.add_argument("--data-dir", type=Path)
-    data_p.add_argument("--archive-path", type=Path)
+    data_p.add_argument("--archive-path", type=Path, nargs="+")
     parser.add_argument(
         "--ignorefile",
         help="Path/name of ignore file. It should follow the gitignore file format.",
@@ -429,24 +442,21 @@ def main():
     parser.add_argument(
         "--manual-progress-file", type=Path, default=Path("data/manual.toml")
     )
-    sp = parser.add_subparsers(dest="action")
-    jsonp = sp.add_parser("json")
-    jsonp.add_argument("outfile", type=Path)
-    htmlp = sp.add_parser("html")
-    htmlp.add_argument("outfile", type=Path)
+    parser.add_argument("outfile", type=Path)
+    parser.add_argument("--action", default="json", choices=["json", "html"])
     args = parser.parse_args()
     logging.root.setLevel(logging._nameToLevel[args.loglevel])
 
     if args.archive_path:
-        data_dir = extract_data_archive(args.archive_path)
+        data_dirs = [extract_data_archive(p) for p in args.archive_path]
     else:
-        data_dir = args.data_dir
-    ignore_matcher = get_ignore_matcher(data_dir, args.ignorefile)
+        data_dirs = [args.data_dir]
+    ignore_matcher = get_ignore_matcher(data_dirs[0], args.ignorefile)
 
-    db_file, progress_file = get_data_files(data_dir)
+    data_files = [get_data_files(data_dir) for data_dir in data_dirs]
 
     reading_time_by_date = get_reading_time(
-        db_file, progress_file, args.manual_progress_file, ignore_matcher
+        data_files, args.manual_progress_file, ignore_matcher
     )
     if args.action == "json":
         with open(args.outfile, "w") as f:
@@ -458,12 +468,15 @@ def main():
                 f,
                 indent=2,
             )
+        logging.info(f"Wrote json output to {str(args.outfile)!r}")
     elif args.action == "html":
         render_graph(reading_time_by_date, args.outfile)
 
     if args.archive_path:
         # clean up
-        shutil.rmtree(data_dir, ignore_errors=True)
+        for data_dir in data_dirs:
+            shutil.rmtree(data_dir, ignore_errors=True)
+
 
 if __name__ == "__main__":
     main()
