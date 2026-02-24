@@ -46,7 +46,11 @@ else:
     import tomli as tomllib
 
 
-logging.basicConfig(format="%(message)s", level=logging.INFO, handlers=[RichHandler(rich_tracebacks=True)])
+logging.basicConfig(
+    format="%(message)s",
+    level=logging.INFO,
+    handlers=[RichHandler(rich_tracebacks=True)],
+)
 
 PROGRESS_RE = re.compile(
     r"""
@@ -89,8 +93,8 @@ class DailyStats:
             raise ValueError(f"invalid daily stats string {val}")
         day = UNIX_EPOCH + td(days=int(match["day_delta"]))
         assert day <= TODAY, f"Got future day {day} in daily stats"
-        reading_time = td(milliseconds=int(match['time_ms']))
-        words = int(match['words'])
+        reading_time = td(milliseconds=int(match["time_ms"]))
+        words = int(match["words"])
         return DailyStats(day, reading_time, words)
 
     def __str__(self) -> str:
@@ -135,12 +139,12 @@ def get_progress(
             continue
         if not entry.string:
             continue
-        file_path_raw = entry.attrs['name']
+        file_path_raw = entry.attrs["name"]
         assert isinstance(file_path_raw, str)
         file_path_raw = names_lower.get(file_path_raw, file_path_raw)
         file = PurePosixPath(file_path_raw)
         if match := PROGRESS_RE.match(entry.string):
-            val = Fraction(match['percentage'])
+            val = Fraction(match["percentage"])
             if old := progress.get(file):
                 # just to be extra sure
                 logging.warning(f"duplicate! {file=!r}, {old=!r}, {val=!r}")
@@ -156,10 +160,10 @@ def get_daily_progress(
     cur = db_con.execute("SELECT * FROM 'statistics'")
     stats: BookStatsDict = {}
     for row in cur.fetchall():
-        file = PurePosixPath(row['filename'])
-        reading_time = td(milliseconds=row['usedTime'])
-        all_stats = [DailyStats.from_str(line) for line in row['dates'].splitlines()]
-        book_stats = BookReadStats(reading_time, row['readWords'], all_stats)
+        file = PurePosixPath(row["filename"])
+        reading_time = td(milliseconds=row["usedTime"])
+        all_stats = [DailyStats.from_str(line) for line in row["dates"].splitlines()]
+        book_stats = BookReadStats(reading_time, row["readWords"], all_stats)
         if old := stats.get(file):
             # just to be extra sure
             logging.warning(f"duplicate! {file=!r}, {old=!r}, {book_stats=!r}")
@@ -175,9 +179,9 @@ def get_book_info(db_con: sqlite3.Connection) -> BookMetadataDict:
         FROM 'books' b RIGHT JOIN 'tmpbooks' t ON b.filename = t.filename;""")
     metadata = {}
     for row in cur.fetchall():
-        file = PurePosixPath(row['filename'])
-        title = row['book']
-        author = row['author']
+        file = PurePosixPath(row["filename"])
+        title = row["book"]
+        author = row["author"]
 
         metadata[file] = BookMetadata(title, author)
     return metadata
@@ -196,7 +200,7 @@ def get_unique_books(
 
     def normalize_title(title: str) -> list[str]:
         """Removes some common terms and splits by whitespace."""
-        if idx := title.find(' by ') > 1:
+        if idx := title.find(" by ") > 1:
             title = title[:idx]
         title = title.replace("z-lib.org", "")
         title = title.replace(".epub", "")
@@ -207,7 +211,7 @@ def get_unique_books(
         other_books: BookMetadataDict,
         file: PurePosixPath,
         info: BookMetadata,
-        field_name: Literal['title'] | Literal['author'],
+        field_name: Literal["title"] | Literal["author"],
     ):
         matcher.set_seq1(getattr(info, field_name))
         similar = set()
@@ -230,9 +234,9 @@ def get_unique_books(
     for file in books.keys():
         if (info := rem_books.get(file)) is None:
             continue
-        similar_titles = get_similar(rem_books, file, info, 'title')
+        similar_titles = get_similar(rem_books, file, info, "title")
         if info.author:
-            similar_authors = get_similar(rem_books, file, info, 'author')
+            similar_authors = get_similar(rem_books, file, info, "author")
             # print(file.name, similar_titles, similar_authors)
             dups = similar_titles & similar_authors
         else:
@@ -251,7 +255,7 @@ def get_unique_books(
             del rem_books[dup]
 
     # debug assert
-    for (g1, g2) in combinations(groups, r=2):
+    for g1, g2 in combinations(groups, r=2):
         if not g1.isdisjoint(g2):
             raise Exception(f"Book(s) {g1 & g2} in both groups", g1, g2)
 
@@ -284,25 +288,25 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
     output = {}
     # could probably use pydantic for this, but meh
     for book in data.get("books", []):
-        bmd = BookMetadata(book['title'], book['author'])
+        bmd = BookMetadata(book["title"], book["author"])
         daily_stats: list[DailyStats] = []
         output[bmd] = daily_stats
-        for session in book['sessions']:
-            if 'day' in session:  # single date
-                assert isinstance(session['day'], date)
+        for session in book["sessions"]:
+            if "day" in session:  # single date
+                assert isinstance(session["day"], date)
                 ds = DailyStats(
-                    day=date_to_dt(session['day']),
+                    day=date_to_dt(session["day"]),
                     num_words=session.get("num_words", 0),
-                    reading_time=td(seconds=session['reading_time']),
+                    reading_time=td(seconds=session["reading_time"]),
                 )
                 daily_stats.append(ds)
             else:  # range of dates
-                assert isinstance(session['start'], date)
-                assert isinstance(session['end'], date)
-                total_time = session['reading_time']
-                total_words = session.get('num_words', 0)
-                start = date_to_dt(session['start'])
-                end = date_to_dt(session['end']) + td(days=1)
+                assert isinstance(session["start"], date)
+                assert isinstance(session["end"], date)
+                total_time = session["reading_time"]
+                total_words = session.get("num_words", 0)
+                start = date_to_dt(session["start"])
+                end = date_to_dt(session["end"]) + td(days=1)
                 num_days = (end - start).days
                 time_per_day = td(seconds=total_time / num_days)
                 words_per_day = total_words / num_days
@@ -314,13 +318,13 @@ def parse_manual_progress(file: Path) -> dict[BookMetadata, list[DailyStats]]:
                     daily_stats.append(ds)
                     day = day + td(days=1)
 
-        for (day1, day2) in combinations(daily_stats, r=2):
+        for day1, day2 in combinations(daily_stats, r=2):
             assert day1.day != day2.day, f"overlapping days found! {day1} {day2}"
     return output
 
 
 def process_backup(ignore_matcher, db_file: Path, progress_file: Path):
-    logging.info(f"Processing '{db_file.parent.stem.split(".")[0]}'")
+    logging.info(f"Processing '{db_file.parent.stem.split('.')[0]}'")
     con = sqlite3.connect(db_file)
     con.row_factory = sqlite3.Row
     daily_progress = get_daily_progress(con)
@@ -353,7 +357,9 @@ def get_reading_time(
         for file, stats in daily_progress.items():
             for day in stats.daily_stats:
                 if day in processed[file]:
-                    logging.debug(f"Cross-archive duplicate! '{file}' {day} first seen in '{db_file}'")
+                    logging.debug(
+                        f"Cross-archive duplicate! '{file}' {day} first seen in '{db_file}'"
+                    )
                     continue
                 total_reading_time_by_date[day.day.date()] += day.reading_time
                 if file not in unique_books:
@@ -379,7 +385,7 @@ def get_reading_time(
 
 
 def render_graph(reading_time_by_date, out_path: Path):
-    from render_html import create_graph
+    from .render_html import create_graph
 
     t = create_graph(reading_time_by_date)
     out_path.write_text(t)
@@ -435,13 +441,52 @@ def get_ignore_matcher(data_dir: Path, ignorefile: str) -> IgnoreMatcher:
     return DEFAULT_IGNORE_MATCHER
 
 
+def process_archive(archive_bytes: bytes) -> str:
+    """Helper method for processing an archive from raw bytes (used by Azure Function)."""
+    with tempfile.NamedTemporaryFile(suffix=".zip", delete=False) as tf:
+        tf.write(archive_bytes)
+        archive_path = Path(tf.name)
+
+    try:
+        data_dir = extract_data_archive(archive_path)
+        db_file, progress_file = get_data_files(data_dir)
+        reading_time_by_date = get_reading_time(
+            [(db_file, progress_file)],
+            # We don't have manual progress in the webhook
+            Path("/dev/null"),
+            DEFAULT_IGNORE_MATCHER,
+        )
+
+        shutil.rmtree(data_dir, ignore_errors=True)
+
+        result = {
+            "stats": {
+                d.isoformat(): v.total_seconds()
+                for d, v in reading_time_by_date.items()
+            }
+        }
+        return json.dumps(result, indent=2)
+    finally:
+        archive_path.unlink(missing_ok=True)
+
+
 def main():
     parser = argparse.ArgumentParser("moonm")
     parser.add_argument("--stats", action="store_true", default=False)
     parser.add_argument("--loglevel", default="INFO", choices=logging._nameToLevel)
     data_p = parser.add_mutually_exclusive_group(required=True)
-    data_p.add_argument("--data-dirs", type=Path, nargs="+", help="Path to extracted backup. See --archive-path.")
-    data_p.add_argument("--archive-path", type=Path, nargs="+", help="Path to backup archive. Can handle multiple files (eg- a backup per device like ebook reader, phone, etc.). It will automatically prune duplicates from when Moon+ initializes the device DB from another's backup.")
+    data_p.add_argument(
+        "--data-dirs",
+        type=Path,
+        nargs="+",
+        help="Path to extracted backup. See --archive-path.",
+    )
+    data_p.add_argument(
+        "--archive-path",
+        type=Path,
+        nargs="+",
+        help="Path to backup archive. Can handle multiple files (eg- a backup per device like ebook reader, phone, etc.). It will automatically prune duplicates from when Moon+ initializes the device DB from another's backup.",
+    )
     parser.add_argument(
         "--ignorefile",
         help="Path/name of ignore file. It should follow the gitignore file format.",
@@ -469,10 +514,12 @@ def main():
     if args.action == "json":
         with open(args.outfile, "w") as f:
             json.dump(
-                {"stats": {
-                    d.isoformat(): v.total_seconds()
-                    for d, v in reading_time_by_date.items()
-                }},
+                {
+                    "stats": {
+                        d.isoformat(): v.total_seconds()
+                        for d, v in reading_time_by_date.items()
+                    }
+                },
                 f,
                 indent=2,
             )
