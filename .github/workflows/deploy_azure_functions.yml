@@ -45,14 +45,15 @@ jobs:
           cd azure_webhook
           zip -r ../deploy.zip . -x "wheels/*" "requirements.txt"
           
-      - name: Azure Login
-        uses: azure/login@v2
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Deploy via REST API
+        shell: bash
+        run: |
+          PUBLISH_URL=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'publishUrl="[^"]*"' | head -1 | cut -d '"' -f 2)
+          USER_NAME=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'userName="[^"]*"' | head -1 | cut -d '"' -f 2)
+          USER_PASS=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'userPWD="[^"]*"' | head -1 | cut -d '"' -f 2)
           
-      - name: Deploy via Azure CLI
-        uses: azure/cli@v2
-        with:
-          azcliversion: latest
-          inlineScript: |
-            az functionapp deployment source config-zip -g ${{ vars.AZURE_RESOURCE_GROUP }} -n ${{ vars.AZURE_FUNCTIONAPP_NAME }} --src deploy.zip
+          echo "Deploying to https://$PUBLISH_URL/api/zipdeploy"
+          
+          curl -X POST -u "$USER_NAME:$USER_PASS" \
+            --data-binary @"deploy.zip" \
+            "https://$PUBLISH_URL/api/zipdeploy"
