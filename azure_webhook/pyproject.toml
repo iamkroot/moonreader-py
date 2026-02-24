@@ -22,3 +22,6 @@ reportUnknownMemberType = "none"
 
 [tool.uv.sources]
 moon-reader = { path = "../", editable = true }
+
+[tool.setuptools]
+py-modules = ["function_app", "refresh_channel"]
