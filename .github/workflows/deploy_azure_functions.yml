@@ -46,3 +46,4 @@ jobs:
           app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
           package: './azure_webhook'
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          respect-funcignore: true
