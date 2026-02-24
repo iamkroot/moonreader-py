@@ -1,9 +1,13 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "azure-webhook"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.11"
 dependencies = [
     "aiohttp>=3.13.3",
     "azure-functions>=1.24.0",
@@ -21,7 +25,7 @@ reportUnknownVariableType = "none"
 reportUnknownMemberType = "none"
 
 [tool.uv.sources]
-moon-reader = { path = "../", editable = true }
+moon-reader = { path = "../" }
 
 [tool.setuptools]
 py-modules = ["function_app", "refresh_channel"]
