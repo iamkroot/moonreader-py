@@ -31,10 +31,8 @@ jobs:
         shell: bash
         run: |
           cd azure_webhook
-          # Export requirements, avoiding editable installs for production
-          uv export --no-dev --no-editable --format requirements-txt > requirements.txt
-          # Install dependencies directly into the Azure Functions package format
-          uv pip install --target=".python_packages/lib/site-packages" -r requirements.txt
+          # Install all dependencies including the local moon_reader into the deployment package
+          uv pip install --target=".python_packages/lib/site-packages" .
           
           # Clean up any cached files to reduce deployment size
           find .python_packages -type d -name "__pycache__" -exec rm -rf {} + || true
