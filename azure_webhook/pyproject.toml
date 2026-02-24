@@ -1,0 +1,24 @@
+[project]
+name = "azure-webhook"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "aiohttp>=3.13.3",
+    "azure-functions>=1.24.0",
+    "google-api-python-client>=2.190.0",
+    "google-auth>=2.48.0",
+    "moon-reader",
+    "requests>=2.32.5",
+    "rich>=14.3.3",
+]
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+reportUnusedCallResult = "none"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"
+
+[tool.uv.sources]
+moon-reader = { path = "../", editable = true }

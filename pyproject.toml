@@ -18,3 +18,9 @@ build-backend = "hatchling.build"
 
 [project.scripts]
 moonm = "moon_reader.compute_read_stats:main"
+
+[tool.basedpyright]
+typeCheckingMode = "basic"
+reportUnusedCallResult = "none"
+reportUnknownVariableType = "none"
+reportUnknownMemberType = "none"

@@ -1,0 +1,48 @@
+name: Deploy Azure Function
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'azure_webhook/**'
+      - 'moon_reader/**'
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: '3.14'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Setup Python ${{ env.PYTHON_VERSION }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Build dependencies
+        shell: bash
+        run: |
+          cd azure_webhook
+          # Export requirements, avoiding editable installs for production
+          uv export --no-dev --no-editable --format requirements-txt > requirements.txt
+          # Install dependencies directly into the Azure Functions package format
+          uv pip install --target=".python_packages/lib/site-packages" -r requirements.txt
+          
+          # Clean up any cached files to reduce deployment size
+          find .python_packages -type d -name "__pycache__" -exec rm -rf {} + || true
+
+      - name: Run Azure Functions Action
+        uses: Azure/functions-action@v1
+        id: fa
+        with:
+          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
+          package: './azure_webhook'
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
