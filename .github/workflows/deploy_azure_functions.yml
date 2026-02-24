@@ -41,7 +41,7 @@ jobs:
         shell: bash
         run: |
           cd azure_webhook
-          zip -r ../deploy.zip . -x "wheels/*" "requirements.txt"
+          zip -r ../deploy.zip ./* .python_packages -x "wheels/*" "requirements.txt"
           
       - name: Deploy via REST API
         shell: bash
