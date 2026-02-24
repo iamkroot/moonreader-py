@@ -39,11 +39,20 @@ jobs:
           # Clean up any cached files to reduce deployment size
           find .python_packages -type d -name "__pycache__" -exec rm -rf {} + || true
 
-      - name: Run Azure Functions Action
-        uses: Azure/functions-action@v1
-        id: fa
+      - name: Create ZIP Deployment Package
+        shell: bash
+        run: |
+          cd azure_webhook
+          zip -r ../deploy.zip . -x "wheels/*" "requirements.txt"
+          
+      - name: Azure Login
+        uses: azure/login@v2
         with:
-          app-name: ${{ vars.AZURE_FUNCTIONAPP_NAME }}
-          package: './azure_webhook'
-          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
-          respect-funcignore: true
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          
+      - name: Deploy via Azure CLI
+        uses: azure/cli@v2
+        with:
+          azcliversion: latest
+          inlineScript: |
+            az functionapp deployment source config-zip -g ${{ vars.AZURE_RESOURCE_GROUP }} -n ${{ vars.AZURE_FUNCTIONAPP_NAME }} --src deploy.zip
