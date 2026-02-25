@@ -1,0 +1,17 @@
+[project]
+name = "gdrive-watcher"
+version = "0.1.0"
+description = "FastAPI service for Google Drive webhook watching"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.111.0",
+    "uvicorn>=0.30.0",
+    "google-api-python-client>=2.130.0",
+    "google-auth>=2.29.0",
+    "requests>=2.32.0",
+    "moon-reader",
+]
+
+[tool.uv.sources]
+moon-reader = { path = ".." }
