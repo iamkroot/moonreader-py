@@ -1,0 +1,6 @@
+local.settings.json
+requirements.txt
+moon_reader
+.vscode
+state.json
+test.sh
