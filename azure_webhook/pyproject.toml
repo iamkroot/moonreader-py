@@ -11,9 +11,12 @@ requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.13.3",
     "azure-functions>=1.24.0",
+    "beautifulsoup4>=4.11.1",
+    "gitignore-parser>=0.1.3",
     "google-api-python-client>=2.190.0",
     "google-auth>=2.48.0",
-    "moon-reader",
+    "jinja2>=3.1.2",
+    "lxml>=5.3.0",
     "requests>=2.32.5",
     "rich>=14.3.3",
 ]
@@ -24,8 +27,6 @@ reportUnusedCallResult = "none"
 reportUnknownVariableType = "none"
 reportUnknownMemberType = "none"
 
-[tool.uv.sources]
-moon-reader = { path = "../" }
-
 [tool.setuptools]
 py-modules = ["function_app", "refresh_channel"]
+packages = ["moon_reader"]

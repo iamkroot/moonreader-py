@@ -6,7 +6,6 @@ __pycache__/
 .python_packages
 *.egg-info
 build/
-azure_webhook/.vscode/extensions.json
-azure_webhook/.vscode/launch.json
-azure_webhook/.vscode/settings.json
-azure_webhook/.vscode/tasks.json
+azure_webhook/.vscode/
+azure_webhook/moon_reader/
+state.json
