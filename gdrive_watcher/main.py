@@ -37,12 +37,13 @@ def get_config():
             config["webhook_url"] = gdrive.get("webhook_url")
             config["sa_json"] = gdrive.get("sa_json")
             config["github_workflow_url"] = github.get("workflow_url")
+            config["github_token"] = github.get("token")
 
     # Environment variables take precedence
     target_dir = os.environ.get("GDRIVE_TARGET_DIR", config.get("target_dir"))
     webhook_token = os.environ.get("GDRIVE_WEBHOOK_TOKEN", config.get("webhook_token"))
     webhook_url = os.environ.get("GDRIVE_WEBHOOK_URL", config.get("webhook_url"))
-    github_token = os.environ.get("GITHUB_TOKEN")
+    github_token = os.environ.get("GITHUB_TOKEN", config.get("github_token"))
     github_workflow_url = os.environ.get(
         "GITHUB_WORKFLOW_URL", config.get("github_workflow_url")
     )
@@ -141,7 +142,6 @@ def process_latest_file_sync(config):
 
     try:
         process_result = compute_read_stats.process_archive(content_bytes)
-        logging.info(f"Processor result: {process_result}")
     except Exception as e:
         logging.error(f"Failed to process data relative to compute_read_stats: {e}")
         raise RuntimeError(f"Processing error: {str(e)}")
@@ -300,6 +300,9 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port", type=int, default=8000, help="Port to run the service on"
     )
+    parser.add_argument(
+        "--host", type=str, default="localhost", help="Port to run the service on"
+    )
     args = parser.parse_args()
 
-    uvicorn.run("main:app", host="0.0.0.0", port=args.port, reload=True)
+    uvicorn.run("main:app", host=args.host, port=args.port, reload=True)

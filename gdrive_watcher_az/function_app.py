@@ -267,7 +267,7 @@ def perform_channel_refresh(config):
 @app.timer_trigger(
     schedule="0 0 */22 * * *",
     arg_name="myTimer",
-    run_on_startup=False,
+    run_on_startup=True,
     use_monitor=False,
 )
 def refresh_channel_timer(myTimer: func.TimerRequest) -> None:
