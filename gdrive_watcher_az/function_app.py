@@ -34,12 +34,13 @@ def get_config():
             config["webhook_url"] = gdrive.get("webhook_url")
             config["sa_json"] = gdrive.get("sa_json")
             config["github_workflow_url"] = github.get("workflow_url")
+            config["github_token"] = github.get("token")
 
     # Environment variables take precedence (vital for Azure)
     target_dir = os.environ.get("GDRIVE_TARGET_DIR", config.get("target_dir"))
     webhook_token = os.environ.get("GDRIVE_WEBHOOK_TOKEN", config.get("webhook_token"))
     webhook_url = os.environ.get("GDRIVE_WEBHOOK_URL", config.get("webhook_url"))
-    github_token = os.environ.get("GITHUB_TOKEN")
+    github_token = os.environ.get("GITHUB_TOKEN", config.get("github_token"))
     github_workflow_url = os.environ.get(
         "GITHUB_WORKFLOW_URL", config.get("github_workflow_url")
     )
@@ -113,20 +114,31 @@ def trigger_github_actions_sync(file_content: str, token: str, workflow_url: str
 
 
 def process_latest_file_sync(config):
-    service = get_drive_service(config)
+    logging.info("Starting to get latest file")
+    try:
+        service = get_drive_service(config)
+    except Exception as e:
+        logging.error(f"Failed to get drive service: {e}")
+        raise RuntimeError(f"Drive service error: {str(e)}")
+    logging.info("Got gdrive service")
     target_dir = config["target_dir"]
 
-    results = (
-        service.files()
-        .list(
-            q=f"'{target_dir}' in parents",
-            orderBy="modifiedTime desc",
-            pageSize=1,
-            fields="files(id, name, createdTime, modifiedTime)",
-            spaces="drive",
+    try:
+        results = (
+            service.files()
+            .list(
+                q=f"'{target_dir}' in parents",
+                orderBy="modifiedTime desc",
+                pageSize=1,
+                fields="files(id, name, createdTime, modifiedTime)",
+                spaces="drive",
+            )
+            .execute()
         )
-        .execute()
-    )
+    except Exception as e:
+        logging.error(f"Failed to list files: {e}")
+        raise RuntimeError(f"List files error: {str(e)}")
+    logging.info("Got gdrive result files")
 
     items = results.get("files", [])
     if not items:
@@ -140,7 +152,6 @@ def process_latest_file_sync(config):
 
     try:
         process_result = compute_read_stats.process_archive(content_bytes)
-        logging.info(f"Processor result: {process_result}")
     except Exception as e:
         logging.error(f"Failed to process data relative to compute_read_stats: {e}")
         raise RuntimeError(f"Processing error: {str(e)}")
@@ -177,7 +188,7 @@ async def google_drive_webhook(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Event ignored", status_code=200)
     logging.info("Processing file update")
     try:
-        result_msg = await asyncio.to_thread(process_latest_file_sync, config)
+        result_msg = process_latest_file_sync(config)
         return func.HttpResponse(result_msg, status_code=200)
     except Exception as e:
         logging.error(f"Error processing webhook: {e}")
