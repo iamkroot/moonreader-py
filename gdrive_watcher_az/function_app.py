@@ -265,7 +265,7 @@ def perform_channel_refresh(config):
 
 
 @app.timer_trigger(
-    schedule="0 0 */22 * * *",
+    schedule="0 0 0 * * *",
     arg_name="myTimer",
     run_on_startup=True,
     use_monitor=False,

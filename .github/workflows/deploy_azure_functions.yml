@@ -5,12 +5,12 @@ on:
     branches:
       - main
     paths:
-      - 'azure_webhook/**'
+      - 'gdrive_watcher_az/**'
       - 'moon_reader/**'
   workflow_dispatch:
 
 env:
-  PYTHON_VERSION: '3.12'
+  PYTHON_VERSION: '3.13'
 
 jobs:
   build-and-deploy:
@@ -27,31 +27,22 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
 
-      - name: Build dependencies
+      - name: Export requirements.txt
         shell: bash
         run: |
-          cd azure_webhook
-          # Install all dependencies including the local moon_reader into the deployment package
-          uv pip install --target=".python_packages/lib/site-packages" .
-          
-          # Clean up any cached files to reduce deployment size
-          find .python_packages -type d -name "__pycache__" -exec rm -rf {} + || true
+          cd gdrive_watcher_az
+          uv export --no-dev --no-editable --format requirements-txt --frozen --no-emit-local > requirements.txt
 
       - name: Create ZIP Deployment Package
         shell: bash
         run: |
-          cd azure_webhook
-          zip -r ../deploy.zip ./* .python_packages -x "wheels/*" "requirements.txt"
-          
-      - name: Deploy via REST API
-        shell: bash
-        run: |
-          PUBLISH_URL=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'publishUrl="[^"]*"' | head -1 | cut -d '"' -f 2)
-          USER_NAME=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'userName="[^"]*"' | head -1 | cut -d '"' -f 2)
-          USER_PASS=$(echo '${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}' | grep -o 'userPWD="[^"]*"' | head -1 | cut -d '"' -f 2)
-          
-          echo "Deploying to https://$PUBLISH_URL/api/zipdeploy"
-          
-          curl -X POST -u "$USER_NAME:$USER_PASS" \
-            --data-binary @"deploy.zip" \
-            "https://$PUBLISH_URL/api/zipdeploy"
+          cd gdrive_watcher_az
+          zip -r ../deploy.zip . -x "*.venv*" "*.vscode*" "*__pycache__*" "*.git*"
+
+      - name: Deploy Azure Function
+        uses: Azure/functions-action@v1
+        id: fa
+        with:
+          app-name: 'moon-gdrive-yp78dz03d'
+          package: './deploy.zip'
+          publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
