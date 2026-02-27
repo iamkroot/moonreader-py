@@ -48,5 +48,5 @@ jobs:
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
           sku: flexconsumption
           remote-build: true
-          enable-oryx-build: false
-          scm-do-build-during-deployment: false
+          enable-oryx-build: true
+          scm-do-build-during-deployment: true
