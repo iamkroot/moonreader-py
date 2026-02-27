@@ -3,7 +3,7 @@ name: Deploy Azure Function
 on:
   push:
     branches:
-      - main
+      - master
     paths:
       - 'gdrive_watcher_az/**'
       - 'moon_reader/**'
