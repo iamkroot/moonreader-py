@@ -31,7 +31,8 @@ jobs:
         shell: bash
         run: |
           cd gdrive_watcher_az
-          uv export --no-dev --no-editable --format requirements-txt --frozen --no-emit-local > requirements.txt
+          uv sync
+          uv export --no-dev --no-editable --format requirements-txt --no-emit-local > requirements.txt
 
       - name: Create ZIP Deployment Package
         shell: bash
