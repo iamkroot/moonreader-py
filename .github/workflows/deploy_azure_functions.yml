@@ -43,6 +43,10 @@ jobs:
         uses: Azure/functions-action@v1
         id: fa
         with:
-          app-name: 'moon-gdrive-yp78dz03d'
+          app-name: '${{vars.AZURE_FUNCTIONAPP_NAME}}'
           package: './deploy.zip'
           publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+          sku: flexconsumption
+          remote-build: true
+          enable-oryx-build: false
+          scm-do-build-during-deployment: false
