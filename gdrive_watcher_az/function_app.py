@@ -9,6 +9,7 @@ from pathlib import Path
 
 import azure.functions as func
 import requests
+from azure.storage.blob import BlobServiceClient
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
@@ -194,14 +195,30 @@ async def google_drive_webhook(req: func.HttpRequest) -> func.HttpResponse:
         return func.HttpResponse("Server Error", status_code=500)
 
 
+def get_blob_client():
+    conn_str = os.environ.get("AzureWebJobsStorage")
+    if not conn_str:
+        logging.warning("AzureWebJobsStorage not found.")
+        return None
+    try:
+        service_client = BlobServiceClient.from_connection_string(conn_str)
+        container_client = service_client.get_container_client("app-state")
+        if not container_client.exists():
+            container_client.create_container()
+        return container_client.get_blob_client("state.json")
+    except Exception as e:
+        logging.error(f"Error initializing blob client: {e}")
+        return None
+
+
 def stop_channel(config):
     service = get_drive_service(config)
-    state_file = Path(__file__).parent / "state.json"
+    blob_client = get_blob_client()
 
-    if state_file.exists():
+    if blob_client and blob_client.exists():
         try:
-            with open(state_file, "r") as f:
-                state = json.load(f)
+            state_data = blob_client.download_blob().readall()
+            state = json.loads(state_data)
             if "id" in state and "resourceId" in state:
                 service.channels().stop(
                     body={"id": state["id"], "resourceId": state["resourceId"]}
@@ -214,9 +231,9 @@ def stop_channel(config):
 
         # Remove the state file regardless to prevent stale data
         try:
-            state_file.unlink()
-        except OSError:
-            pass
+            blob_client.delete_blob()
+        except Exception as e:
+            logging.error(f"Failed to delete old state blob: {e}")
         return True
 
     logging.info("No channel state found to stop.")
@@ -232,8 +249,6 @@ def perform_channel_refresh(config):
     if not webhook_url:
         logging.error("No webhook_url configured.")
         return
-
-    state_file = Path(__file__).parent / "state.json"
 
     stop_channel(config)
 
@@ -259,8 +274,13 @@ def perform_channel_refresh(config):
 
     logging.info(f"Successfully started new watch channel: {resp['id']}")
 
-    with open(state_file, "w") as f:
-        json.dump(resp, f)
+    blob_client = get_blob_client()
+    if blob_client:
+        try:
+            blob_client.upload_blob(json.dumps(resp), overwrite=True)
+            logging.info("Saved new channel state to blob storage.")
+        except Exception as e:
+            logging.error(f"Failed to save channel state to blob: {e}")
 
 
 @app.timer_trigger(

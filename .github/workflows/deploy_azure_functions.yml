@@ -7,6 +7,7 @@ on:
     paths:
       - 'gdrive_watcher_az/**'
       - 'moon_reader/**'
+      - '.github/workflows/deploy_azure_functions.yml'
   workflow_dispatch:
 
 env:
