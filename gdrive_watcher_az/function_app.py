@@ -283,6 +283,25 @@ def perform_channel_refresh(config):
             logging.error(f"Failed to save channel state to blob: {e}")
 
 
+@app.route(route="refresh_channel", methods=("POST", "GET"))
+def refresh_channel_http(req: func.HttpRequest) -> func.HttpResponse:
+    logging.info("Manual HTTP trigger to refresh channel.")
+    config = get_config()
+
+    # Optional: protect this endpoint using the same webhook token or a separate secret
+    req_token = req.headers.get("x-goog-channel-token") or req.params.get("token")
+    if req_token != config.get("webhook_token"):
+        logging.error("Unauthorized manual refresh request: invalid token.")
+        return func.HttpResponse("Not authorized", status_code=401)
+
+    try:
+        perform_channel_refresh(config)
+        return func.HttpResponse("Channel refreshed successfully", status_code=200)
+    except Exception as e:
+        logging.error(f"Failed to refresh channel manually: {e}")
+        return func.HttpResponse(f"Error: {e}", status_code=500)
+
+
 @app.timer_trigger(
     schedule="0 0 0 * * *",
     arg_name="myTimer",
